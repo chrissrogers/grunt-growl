@@ -62,49 +62,59 @@ module.exports = function(grunt) {
   // ==========================================================================
 
   function initGrowlStatus() {
-    grunt.utils.hooker.hook(grunt.log, 'write', function(msg){
-      if( grunt.log.uncolor(msg).match(/Waiting.../) ) { flushMessages('ok'); }
-    });
+    var handleWrite = function(msg){
+          if( grunt.log.uncolor(msg).match(/Waiting.../) ) { flushMessages('ok'); }
+        },
+        handleHeader = function(msg){
+          msg = grunt.log.uncolor(msg);
 
-    grunt.utils.hooker.hook(grunt.log, 'header', function(msg){
-      msg = grunt.log.uncolor(msg);
+          if( ignoreWatch && msg.match(/"watch" task/) ) { return; }
 
-      if( ignoreWatch && msg.match(/"watch" task/) ) { return; }
+          if( msg.match(/".+:.+"/) ) { return; }
 
-      if( msg.match(/".+:.+"/) ) { return; }
+          if( !ignoreWatch && msg.match(/"watch" task/) ) {
+            msg += ' for ' + path.basename(process.cwd());
+            ignoreWatch = true;
+          }
 
-      if( !ignoreWatch && msg.match(/"watch" task/) ) {
-        msg += ' for ' + path.basename(process.cwd());
-        ignoreWatch = true;
-      }
+          messages.unshift(msg);
+        },
+        handleOk = function(msg){
+          if( typeof msg === 'string' ) {
+           messages.unshift(grunt.log.uncolor(msg));
+          }
+        },
+        handleError = function(msg){
+          if( typeof msg === 'string' ) {
+           messages.unshift(grunt.log.uncolor(msg));
+           flushMessages('error');
+          }
+        },
+        handleFail = function(error){
+          var warning = [];
 
-      messages.push(msg);
-    });
+          if( typeof error !== 'undefined' ) {
+            warning.unshift(messages[0]);
+            warning.unshift(messages[messages.length-1]);
+            warning.unshift(String(error.message || error));
+            messages = warning;
+            flushMessages('error');
+          }
+        };
 
-    grunt.utils.hooker.hook(grunt.log, 'ok', function(msg){
-      if( typeof msg === 'string' ) {
-       messages.push(grunt.log.uncolor(msg));
-      }
-    });
+    var suppress = grunt.config('growl.suppress') || [];
 
-    grunt.utils.hooker.hook(grunt, 'warn', function(error){
-      var warning = [];
+    if (!(suppress.indexOf('log') > -1)) {
+      grunt.utils.hooker.hook(grunt.log, 'write', handleWrite);
+      grunt.utils.hooker.hook(grunt.log, 'subhead', handleHeader);
+      grunt.utils.hooker.hook(grunt.log, 'ok', handleOk);
+      grunt.utils.hooker.hook(grunt.log, 'error', handleError);
+    }
 
-      if( typeof error !== 'undefined' ) {
-        warning.push(messages[0]);
-        warning.push(messages[messages.length-1]);
-        warning.push(String(error.message || error));
-        messages = warning;
-        flushMessages('error');
-      }
-    });
-
-    grunt.utils.hooker.hook(grunt.log, 'error', function(msg){
-      if( typeof msg === 'string' ) {
-       messages.push(grunt.log.uncolor(msg));
-       flushMessages('error');
-      }
-    });
+    if (!(suppress.indexOf('fail') > -1)) {
+      grunt.utils.hooker.hook(grunt.fail, 'warn', handleFail);
+      grunt.utils.hooker.hook(grunt.fail, 'fatal', handleFail);
+    }
   }
 
   grunt.utils.hooker.hook(grunt, 'initConfig', {
